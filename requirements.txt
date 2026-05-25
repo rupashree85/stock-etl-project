@@ -1,5 +1,7 @@
 streamlit
 pandas
-SQLAlchemy
+sqlalchemy
 plotly
+python-dotenv
+streamlit-autorefresh
 psycopg2-binary
