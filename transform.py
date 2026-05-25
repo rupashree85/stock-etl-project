@@ -20,7 +20,7 @@ REGION_NAME = "ap-south-1"
 
 # Database Configuration
 DB_USER = "postgres"
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_PASSWORD = "srupa1208"
 # Using the exact endpoint from your AWS console
 DB_HOST = "stock-etl-db.cpsc4ssuq6dh.ap-south-1.rds.amazonaws.com" 
 DB_PORT = "5432"

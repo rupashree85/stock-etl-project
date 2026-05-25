@@ -5,7 +5,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 from dotenv import load_dotenv
-
+from streamlit_autorefresh import st_autorefresh
+from datetime import datetime, timedelta
 load_dotenv() # This loads the variables from the .env file
 
 # Now replace your hardcoded strings with this:
@@ -16,14 +17,18 @@ AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY")
 st.set_page_config(page_title="Market Analytics ETL", layout="wide", initial_sidebar_state="expanded")
 st.title("Live Market Data & Sentiment Dashboard")
 
+# Refresh the dashboard every 10 minutes
+count = st_autorefresh(interval=600000, limit=100, key="data_refresh")
+
 # --- SIDEBAR TIME FILTER ---
 st.sidebar.header("Timeframe Controller")
-option = st.sidebar.selectbox("Select View", ["Today", "Last 7 Days", "Last 30 Days"])
+option = st.sidebar.selectbox("Select View", ["Last 24 Hours", "Last 7 Days", "Last 30 Days"])
 
 # Define dynamic date filters based on selection
-if option == "Today":
-    date_filter = "WHERE DATE(timestamp) = CURRENT_DATE"
-    news_filter = "WHERE DATE(published_at) = CURRENT_DATE"
+if option == "Last 24 Hours":
+    # Use a rolling 24-hour window to catch delayed free-tier API news
+    date_filter = "WHERE timestamp >= NOW() - INTERVAL '24 hours'"
+    news_filter = "WHERE published_at >= NOW() - INTERVAL '24 hours'"
 elif option == "Last 7 Days":
     date_filter = "WHERE timestamp >= CURRENT_DATE - INTERVAL '7 days'"
     news_filter = "WHERE published_at >= CURRENT_DATE - INTERVAL '7 days'"
@@ -76,10 +81,10 @@ df_news = load_data(f"SELECT * FROM fact_news_sentiment {news_filter} ORDER BY p
 df_prices = load_data(f"SELECT * FROM fact_intraday_prices {date_filter}")
 df_macro = load_data("SELECT * FROM fact_macro")
 
-# 3. TIMEZONE FIX
 df_news['published_at'] = pd.to_datetime(df_news['published_at']).dt.tz_localize(None)
 df_prices['timestamp'] = pd.to_datetime(df_prices['timestamp']).dt.tz_localize(None)
 
+df_prices = df_prices.sort_values('timestamp')
 # --- DASHBOARD LAYOUT ---
 tab1, tab2, tab3, tab4 = st.tabs(["Core Metrics", "Advanced Analytics", "Derived Metrics", "Database Write-Back"])
 
@@ -295,3 +300,5 @@ with tab4:
         # This code takes the edited table from the screen and writes it straight to AWS PostgreSQL
         edited_df.to_sql('analyst_overrides', engine, if_exists='replace', index=False)
         st.success("Data successfully written to AWS RDS PostgreSQL!")
+st.markdown("### Debug: Raw News Data")
+st.dataframe(load_data("SELECT * FROM fact_news_sentiment LIMIT 100"))
