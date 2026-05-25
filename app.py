@@ -300,5 +300,3 @@ with tab4:
         # This code takes the edited table from the screen and writes it straight to AWS PostgreSQL
         edited_df.to_sql('analyst_overrides', engine, if_exists='replace', index=False)
         st.success("Data successfully written to AWS RDS PostgreSQL!")
-st.markdown("### Debug: Raw News Data")
-st.dataframe(load_data("SELECT * FROM fact_news_sentiment LIMIT 100"))
