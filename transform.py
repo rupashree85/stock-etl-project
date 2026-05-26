@@ -1,10 +1,10 @@
 import os
-
 import boto3
 import pandas as pd
 import json
 import io
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine
 import time
 import os
@@ -91,12 +91,21 @@ def transform_market_data():
         final_df.rename(columns={'Datetime': 'timestamp', 'Open': 'open_price', 'High': 'high_price', 'Low': 'low_price', 'Close': 'current_price', 'Volume': 'volume'}, inplace=True)
         
         # Ensure no duplicates are pushed to the database
+        # Ensure no duplicates are pushed to the database
         try:
-            existing_dates = pd.read_sql("SELECT DISTINCT timestamp FROM fact_intraday_prices", engine)
-            final_df = final_df[~final_df['timestamp'].isin(existing_dates['timestamp'])]
-        except:
-            pass # Table doesn't exist yet
+            existing_data = pd.read_sql("SELECT DISTINCT symbol, timestamp FROM fact_intraday_prices", engine)
             
+            # Create a composite key to safely compare independent stocks
+            final_df['dup_key'] = final_df['symbol'] + "_" + final_df['timestamp'].astype(str)
+            existing_data['dup_key'] = existing_data['symbol'] + "_" + existing_data['timestamp'].astype(str)
+            
+            # Filter out rows that already exist
+            final_df = final_df[~final_df['dup_key'].isin(existing_data['dup_key'])]
+            
+            # Clean up the temporary column before writing to SQL
+            final_df = final_df.drop(columns=['dup_key'])
+        except Exception as e:
+            pass # Table doesn't exist yet
         final_df.to_sql('fact_intraday_prices', engine, if_exists='append', index=False)
         print(f" -> fact_intraday_prices loaded with {len(final_df)} rows.")
 
@@ -149,6 +158,70 @@ def transform_news_data():
     except Exception as e:
         print(f" -> Error processing news data: {e}")
 
+def transform_etrss_data():
+    print("\nProcessing Live Economic Times RSS Data...")
+    try:
+        file_obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key="raw/etrss/markets_feed.xml")
+        xml_content = file_obj['Body'].read()
+        root = ET.fromstring(xml_content)
+        
+        news_records = []
+        
+        # Iterate through every article in the live feed
+        for item in root.findall('.//item'):
+            headline = item.find('title').text if item.find('title') is not None else ''
+            pub_date_str = item.find('pubDate').text if item.find('pubDate') is not None else ''
+            
+            if not headline:
+                continue
+                
+            # Run VADER NLP Analysis
+            sentiment_score = analyzer.polarity_scores(headline)['compound']
+            
+            # Reusing your keyword matching logic for consistency
+            assigned_sector = "General"
+            headline_lower = headline.lower()
+            if any(word in headline_lower for word in ['bank', 'rbi', 'hdfc', 'sbi', 'icici', 'finance']):
+                assigned_sector = "Banking"
+            elif any(word in headline_lower for word in ['tech', 'tcs', 'infosys', 'wipro', 'it']):
+                assigned_sector = "IT"
+            elif any(word in headline_lower for word in ['auto', 'tata motors', 'maruti', 'ev', 'vehicle']):
+                assigned_sector = "Auto"
+            elif any(word in headline_lower for word in ['pharma', 'fda', 'drug', 'health']):
+                assigned_sector = "Pharma"
+            
+            # Parse the RSS date format and shift to IST
+            published_at = pd.to_datetime(pub_date_str).tz_convert('Asia/Kolkata')
+            
+            news_records.append({
+                'published_at': published_at,
+                'source': 'Economic Times Live',
+                'headline': headline,
+                'sentiment_score': sentiment_score,
+                'assigned_sector': assigned_sector
+            })
+            
+        if news_records:
+            df_news = pd.DataFrame(news_records)
+            
+            # Deduplication Check
+            try:
+                existing_news = pd.read_sql("SELECT DISTINCT headline FROM fact_news_sentiment", engine)
+                df_news = df_news[~df_news['headline'].isin(existing_news['headline'])]
+            except:
+                pass # Table doesn't exist yet
+                
+            if not df_news.empty:
+                df_news.to_sql('fact_news_sentiment', engine, if_exists='append', index=False)
+                print(f" -> Live RSS feed loaded: {len(df_news)} new articles scored and added.")
+            else:
+                print(" -> No new RSS articles to add. Awaiting next feed update.")
+        else:
+            print(" -> No valid items found in RSS feed.")
+            
+    except Exception as e:
+        print(f" -> Error processing RSS data: {e}")
+
 def transform_macro_data():
     print("\nProcessing Macroeconomic Data (USD/INR)...")
     try:
@@ -173,6 +246,7 @@ if __name__ == "__main__":
     load_static_dimensions()
     transform_market_data()
     transform_news_data()
+    transform_etrss_data()
     transform_macro_data()
     
     elapsed = round(time.time() - start_time, 2)

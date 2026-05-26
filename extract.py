@@ -4,8 +4,6 @@ import json
 import yfinance as yf
 from datetime import datetime
 
-NEWSAPI_KEY = "f7ed74c2ba5346b0b695c75634b7a511"
-ALPHAVANTAGE_KEY = "1IFESIJEP6FZTDZ5"
 
 import os
 from dotenv import load_dotenv
@@ -13,6 +11,8 @@ from dotenv import load_dotenv
 load_dotenv() # This loads the variables from the .env file
 
 # Now replace your hardcoded strings with this:
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
+ALPHAVANTAGE_KEY = os.getenv("ALPHAVANTAGE_KEY")
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
