@@ -62,17 +62,18 @@ def load_data(query):
 # 1. Core Movers Query
 # 1. Core Movers Query
 df_movers = load_data(f"""
-    WITH open_prices AS (
-        SELECT DISTINCT ON (symbol) symbol, current_price AS start_price 
+    WITH ranked_prices AS (
+        SELECT symbol, current_price, volume,
+               ROW_NUMBER() OVER(PARTITION BY symbol ORDER BY timestamp ASC) as first_trade,
+               ROW_NUMBER() OVER(PARTITION BY symbol ORDER BY timestamp DESC) as last_trade
         FROM fact_intraday_prices
         {date_filter}
-        ORDER BY symbol, timestamp ASC
+    ),
+    open_prices AS (
+        SELECT symbol, current_price AS start_price FROM ranked_prices WHERE first_trade = 1
     ),
     close_prices AS (
-        SELECT DISTINCT ON (symbol) symbol, current_price AS end_price 
-        FROM fact_intraday_prices
-        {date_filter}
-        ORDER BY symbol, timestamp DESC
+        SELECT symbol, current_price AS end_price, volume FROM ranked_prices WHERE last_trade = 1
     )
     SELECT c.symbol, c.sector, ROUND(cp.end_price::numeric, 2) AS last_price,
            ROUND(((cp.end_price - op.start_price) / op.start_price * 100)::numeric, 2) AS percent_change
